@@ -1,0 +1,86 @@
+# Sanitized example: the origin stack for a small-business web + ordering site.
+#
+# This mirrors the SHAPE of what I ran in production for a restaurant business:
+# a reverse proxy as the only exposed service, the web application and the
+# database on separate internal networks, secrets pulled out into .env, and the
+# database NEVER published to the host. All values are placeholders.
+#
+# Public TLS + CDN + WAF terminate at the edge provider (see README); this
+# origin only ever receives already-inspected traffic from the edge.
+
+services:
+  proxy:
+    image: nginx:stable
+    container_name: proxy
+    # The ONLY service bound to the host. In production the origin firewall
+    # additionally restricts :443 to the edge provider's IP ranges so the box
+    # is not directly reachable from the open internet.
+    ports:
+      - "80:80"     # nginx redirects plaintext to HTTPS
+      - "443:443"
+    volumes:
+      - ./nginx/site.example.conf:/etc/nginx/conf.d/site.conf:ro
+      - ./nginx/origin-cert:/etc/nginx/certs:ro   # origin cert (edge<->origin), gitignored
+    networks:
+      - frontend
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  app:
+    # Placeholder for the CMS/storefront (e.g. a PHP/Node app + online ordering).
+    image: example/storefront:latest
+    container_name: app
+    environment:
+      - APP_ENV=production
+      - APP_URL=https://example.com
+      - DB_HOST=db-primary
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      # Card data is handled by the PCI-compliant processor's hosted flow.
+      # The app only ever holds a publishable key + secret for tokenized charges.
+      - PAYMENT_PUBLISHABLE_KEY=${PAYMENT_PUBLISHABLE_KEY}
+      - PAYMENT_SECRET_KEY=${PAYMENT_SECRET_KEY}
+    volumes:
+      - app-data:/var/www/html/uploads        # user/menu assets (back this up!)
+    # NOTE: no `ports:` on purpose. The app is reachable only via the proxy.
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      db-primary:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db-primary:
+    image: mariadb:latest
+    container_name: db-primary
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # NOTE: on the `backend` network ONLY. Not on `frontend`, not published to
+    # the host. The database is unreachable from the internet by construction.
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true      # no outbound/inbound to the host network at all
+
+volumes:
+  app-data:
+  db-data:

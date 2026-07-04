@@ -1,0 +1,22 @@
+# Never commit real secrets or runtime state
+.env
+*.env
+!.env.example
+
+# Origin TLS material (edge <-> origin cert/key)
+nginx/origin-cert/
+*.pem
+*.key
+*.crt
+
+# Runtime data / backups
+db-data/
+app-data/
+backups/
+*.sql
+*.sql.gz
+*.dump
+
+# OS / editor noise
+.DS_Store
+*.swp
