@@ -142,3 +142,5 @@ None of these are exotic. The point is that the small-business version and the e
 ## Why I built this (in one line)
 
 I ran real production infrastructure where downtime cost a real business real money, on a real budget. So when I talk to a customer about uptime, recovery, build-vs-buy, and keeping sensitive data out of scope, I'm talking from having owned the pager, not from a slide.
+
+More write-ups and the live demo site: [brockharries.dev](https://brockharries.dev).
