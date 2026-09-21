@@ -28,7 +28,9 @@ docker exec db-primary \
   -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
   | gzip -c > "$WORKDIR/db-$STAMP.sql.gz"
 
-# --- 2. Asset snapshot (uploaded menu images, etc.) ---
+# --- 2. Asset archive (uploaded menu images, etc.) ---
+#   Taken right after the database dump, not atomically with it. An image uploaded between the
+#   two steps can be missing from the archive. For one consistent recovery point, pause writes first.
 docker run --rm \
   -v restaurant-web-infrastructure_app-data:/data:ro \
   -v "$WORKDIR":/out alpine \
@@ -36,10 +38,21 @@ docker run --rm \
 
 # --- 3. Push OFF-BOX to separate storage (never keep the only copy on the box) ---
 #   BACKUP_REMOTE is e.g. an S3 bucket or a remote host over rsync/ssh.
-#   Using a placeholder command here; wire to your real tool (aws s3 / rclone / rsync).
+#   This example ships no upload command, because the right one depends on your storage.
+#   Until you replace upload() below, the script FAILS ON PURPOSE. A backup job that deletes its
+#   archives on exit and still prints "done" is worse than no backup job.
+upload() {
+  echo "ERROR: upload() is not implemented. Nothing left this box; the archives in $WORKDIR are deleted on exit." >&2
+  echo "       Wire upload() to your storage (aws s3 cp / rclone copy / rsync), then verify the remote copy." >&2
+  return 1
+}
 echo "  -> shipping to ${BACKUP_REMOTE}"
-# aws s3 cp "$WORKDIR/db-$STAMP.sql.gz"     "${BACKUP_REMOTE}/db/"
-# aws s3 cp "$WORKDIR/assets-$STAMP.tar.gz" "${BACKUP_REMOTE}/assets/"
+upload "$WORKDIR/db-$STAMP.sql.gz"     "${BACKUP_REMOTE}/db/"
+upload "$WORKDIR/assets-$STAMP.tar.gz" "${BACKUP_REMOTE}/assets/"
+
+# --- 3b. Verify before reporting success ---
+#   Confirm both objects exist off-box and are not empty (aws s3 ls / rclone lsl; compare sizes or
+#   checksums). An exit code from the upload tool is not proof that the copy is there.
 
 # --- 4. Retention: prune off-box copies older than N days ---
 echo "  -> retention: keeping ${BACKUP_RETENTION_DAYS} days"
@@ -53,7 +66,8 @@ echo "[$(date -Is)] backup done: $STAMP"
 #   1. Spin up a throwaway db container.
 #   2. gunzip -c db-<STAMP>.sql.gz | docker exec -i db-test mariadb -u root -p... <db>
 #   3. Point a scratch app instance at it, load the storefront, place a test order.
-#   4. TIME IT. That elapsed time is your real RTO. Write it down.
+#   4. TIME IT. That elapsed time is your measured recovery duration. Write it down and compare it
+#      with the recovery time the business has agreed it can live with.
 #
 # If you have never done steps 1-4, you do not have a backup. You have a folder.
 # -----------------------------------------------------------------------------

@@ -131,7 +131,7 @@ This ran one restaurant group on one person's shoulders. Standing it up for a la
 
 **Observability past a ping check.** External uptime checks catch "it's down." At scale I'd add application performance monitoring, structured logs shipped to a central store, and alerting on the leading indicators (checkout latency, error rate, order-submission failures) so I'm paged *before* customers feel it, not after.
 
-**A real RPO/RTO, contracted.** The tested nightly restore becomes a documented, agreed RPO/RTO with more frequent (point-in-time) database backups, and a recovery runbook someone other than me can execute, because at scale the bus factor can't be one.
+**A real RPO/RTO, contracted.** Nightly backups and periodic restore tests become a documented, agreed RPO/RTO with more frequent (point-in-time) database backups, and a recovery runbook someone other than me can execute, because at scale the bus factor can't be one.
 
 **Formalize the compliance story.** Keeping card data with the processor already covers the scariest part, but for a larger operation I'd formalize the PCI scope boundary, add a WAF ruleset tuned to the app, tighten security headers and CSP, and put SSO/MFA in front of every admin surface.
 
