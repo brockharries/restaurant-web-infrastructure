@@ -10,7 +10,7 @@ This is a sanitized, high-level write-up of how that system was built and operat
 
 ## Problem
 
-A restaurant group that takes orders online has a website that is not a brochure. It is **revenue infrastructure**. When it's slow, orders don't get placed. When it's down at 6:45pm on a Friday, that's not a support ticket, it's lost dinner service the business never gets back. And unlike a tech company, there is no on-call rotation, no platform team, no runbook. There's me.
+A restaurant that takes orders online has a website that is not a brochure. It is **revenue infrastructure**. When it's slow, orders don't get placed. When it's down at 6:45pm on a Friday, that's not a support ticket, it's lost dinner service the business never gets back. And unlike a tech company, there is no on-call rotation, no platform team, no runbook. There's me.
 
 The business started where most small businesses start: a website and email bolted onto whatever a previous vendor set up, spread across accounts nobody had full credentials for, on hosting nobody could describe. The concrete problems:
 
@@ -31,8 +31,8 @@ The shape of it:
 
 - **One front door.** A CDN/edge provider (Cloudflare-style) sits in front of everything: it terminates TLS with an auto-renewing certificate, absorbs bot and attack traffic before it reaches the origin, caches static assets so a traffic spike doesn't hit the application server, and hides the origin's real IP. The public internet talks to the edge, never directly to the box.
 - **A reverse proxy at the origin.** Behind the edge, an Nginx reverse proxy is the only thing listening. It routes requests to the web application, enforces sane timeouts and body-size limits, and gives me one place to add rate limiting, redirects, and security headers.
-- **The web application + ordering.** A containerized CMS/storefront (the public site plus online ordering) runs as an application service, isolated from the proxy and the database on separate internal networks. Payment card data is handled by a PCI-compliant payment processor's hosted flow, so the application **never** stores card numbers. That keeps the sensitive-data blast radius small on purpose.
-- **A dedicated database tier.** The datastore runs as its own service on an internal-only network: not reachable from the internet at all, only from the application. Credentials live in environment/secret files, never in the image or in version control.
+- **The web application + ordering.** A containerized CMS/storefront (the public site plus online ordering) runs as an application service. The proxy and the database sit on separate Docker networks, and the app is the only container attached to both, so the proxy has no direct path to the database. Payment card data is handled by a PCI-compliant payment processor's hosted flow, so the application **never** stores card numbers. That keeps the sensitive-data blast radius small on purpose.
+- **A dedicated database tier.** The datastore runs as its own service on an internal-only network: not reachable from the internet at all, only from the application and from the Docker host itself, which I treat as trusted. Credentials live in environment/secret files, never in the image or in version control.
 - **Backups that are actually restores.** Nightly automated database dumps and file-asset snapshots, pushed off-box to separate storage, with **retention** and (the part most setups skip) a **periodic test restore**, so I knew the backup was a real recovery path and not a folder full of untested hope.
 - **Monitoring and alerting.** External uptime checks on the storefront and the ordering endpoint, so I found out the site was down from an alert on my phone, not from an angry phone call, and could act before dinner service.
 - **DNS and email consolidated under my control.** DNS moved to a single provider I administered, with correct records for the web edge and for deliverable transactional email (SPF/DKIM/DMARC) so order confirmations actually landed in inboxes.
@@ -107,7 +107,7 @@ What drove it:
 
 **1. Ownership beats convenience when the thing is revenue-critical.** The inherited setup was "managed" only in the sense that nobody understood it. When something broke, the answer was to file a ticket with a vendor and wait. During a dinner rush, waiting is the one thing you can't afford. Owning the stack meant that when it broke, I could open a terminal and fix it, and I knew exactly what "it" was. For a system where minutes of downtime equal lost orders, the ability to diagnose and recover *myself* was worth more than the convenience of outsourcing.
 
-**2. But own the right things.** I did **not** try to build everything. TLS certificate lifecycle, edge DDoS/bot absorption, and above all **card data** are exactly the places where rolling your own is all downside. So the edge/CDN handles certs and attack traffic, and a PCI-compliant processor handles cards through a hosted flow so card numbers never touch my origin at all. That single choice took the scariest compliance surface off my plate and shrank the blast radius of any origin compromise to "no card data was ever here."
+**2. But own the right things.** I did **not** try to build everything. TLS certificate lifecycle, edge DDoS/bot absorption, and above all **card data** are exactly the places where rolling your own is all downside. So the edge/CDN handles certs and attack traffic, and a PCI-compliant processor handles cards through a hosted flow so card numbers never touch my origin at all. That choice kept raw card numbers off my origin and cut the PCI scope down a long way. It did not make the scope zero. The business still has merchant obligations, and the page that sends a customer to checkout is mine to protect, because whoever controls it can send the customer somewhere else.
 
 **3. A backup you haven't restored is a hypothesis, not a backup.** The inherited setup had "backups" nobody had ever restored. I treated the tested restore as the actual deliverable. The backup job is just how you get there. Being able to say "I have recovered this system from backup, on purpose, and timed it" is the difference between a real RTO and a wish.
 
@@ -121,7 +121,7 @@ That conditional (*right call at this size, different calculus at another*) is e
 
 ## What I'd Do Differently at Scale
 
-This ran one restaurant group on one person's shoulders. Standing it up for a larger organization, or a chain, the design changes in specific, defensible ways:
+This ran one restaurant on one person's shoulders. Standing it up for a larger organization, or a chain, the design changes in specific, defensible ways:
 
 **Kill the single point of failure.** The single origin becomes redundant application instances behind a load balancer, and the single database becomes a managed/replicated database with automated failover. The edge caching that currently *masks* an origin hiccup would become a real HA tier underneath it.
 
@@ -133,7 +133,7 @@ This ran one restaurant group on one person's shoulders. Standing it up for a la
 
 **A real RPO/RTO, contracted.** Nightly backups and periodic restore tests become a documented, agreed RPO/RTO with more frequent (point-in-time) database backups, and a recovery runbook someone other than me can execute, because at scale the bus factor can't be one.
 
-**Formalize the compliance story.** Keeping card data with the processor already covers the scariest part, but for a larger operation I'd formalize the PCI scope boundary, add a WAF ruleset tuned to the app, tighten security headers and CSP, and put SSO/MFA in front of every admin surface.
+**Formalize the compliance story.** Hosted payments keep raw card data off the origin and reduce PCI scope. They don't remove the merchant's obligations or the need to secure the site that directs customers to checkout, and that applies at this size as much as at a larger one. For a larger operation I'd document the PCI scope boundary, add a WAF ruleset tuned to the app, tighten security headers and CSP, and put SSO/MFA in front of every admin surface.
 
 None of these are exotic. The point is that the small-business version and the enterprise version share the same backbone: a small closed origin, sensitive data pushed to specialists, tested recovery, monitoring you trust. The differences are exactly the ones a Solutions Engineer should be able to name, justify, and sequence for a customer deciding how much infrastructure their business actually needs.
 
@@ -141,6 +141,6 @@ None of these are exotic. The point is that the small-business version and the e
 
 ## Why I built this (in one line)
 
-I ran real production infrastructure where downtime cost a real business real money, on a real budget. So when I talk to a customer about uptime, recovery, build-vs-buy, and keeping sensitive data out of scope, I'm talking from having owned the pager, not from a slide.
+I ran real production infrastructure where downtime cost a real business real money, on a real budget. So when I talk to a customer about uptime, recovery, build-vs-buy, and keeping card data off the origin, I'm talking from having owned the pager, not from a slide.
 
 More write-ups and the live demo site: [brockharries.dev](https://brockharries.dev).

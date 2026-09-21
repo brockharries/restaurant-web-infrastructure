@@ -79,7 +79,10 @@ networks:
     driver: bridge
   backend:
     driver: bridge
-    internal: true      # no outbound/inbound to the host network at all
+    # internal: no route between this network and anything outside the host.
+    # It does not isolate the database from the Docker host or from other
+    # containers attached to this network, so both are trusted.
+    internal: true
 
 volumes:
   app-data:
