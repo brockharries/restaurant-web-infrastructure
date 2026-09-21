@@ -1,4 +1,4 @@
-# Running the Web + Backend Infrastructure for a Multi-Location Restaurant Business
+# Running the Web + Backend Infrastructure for a Restaurant Business
 
 For several years I owned the entire web and backend footprint for a family-owned restaurant business doing **$3M+ in annual revenue**: the public website, online ordering, email, DNS, backups, and every piece of glue that kept them online. Real customers, real orders, real money on the line if it went down during a dinner rush.
 
